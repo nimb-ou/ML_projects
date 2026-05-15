@@ -2,6 +2,8 @@
 digits.db
 digits.csv
 digits_memory
+bench/bench
+bench/results_*.json
 *.o
 *.a
 *.so

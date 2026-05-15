@@ -34,6 +34,23 @@ That's the whole system. The trick is doing the right thing in the right order: 
 | [`LINKEDIN_PROJECT.md`](LINKEDIN_PROJECT.md) | Short polished project description for a LinkedIn profile. |
 | [`LINKEDIN_POST.md`](LINKEDIN_POST.md) | The share-post for LinkedIn. |
 
+### Benchmark suite
+
+| File | What it is |
+|---|---|
+| [`bench/HOWTO.md`](bench/HOWTO.md) | Step-by-step guide: what each measurement means, how to run it, how to read the output. |
+| [`bench/run_all.sh`](bench/run_all.sh) | One command. Runs the Python + C benches end to end and prints a comparison. |
+| [`bench/bench.py`](bench/bench.py) | Python benchmark — hash, brute force, KDTree, BallTree, hybrid. |
+| [`bench/bench.c`](bench/bench.c) | C benchmark — hash + brute-force fallback. |
+| [`bench/compare.py`](bench/compare.py) | Cross-language comparison table. |
+
+Run it:
+
+```bash
+pip install psutil       # one extra dep for the bench
+./bench/run_all.sh       # ~5 seconds; prints time, RSS, p50/p99, qps for every method
+```
+
 ### Designed assets (v2)
 
 | File | What it is |
