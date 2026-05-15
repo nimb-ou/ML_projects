@@ -17,15 +17,34 @@ That's the whole system. The trick is doing the right thing in the right order: 
 
 ## Repo contents
 
+### Code
+
 | File | What it is |
 |---|---|
 | [`digits_memory.py`](digits_memory.py) | Production-style Python implementation. Downloads the dataset once, persists to SQLite, builds the in-memory index, runs demo queries. |
 | [`digits_memory.c`](digits_memory.c) | Pure C version. No dependencies. Open-addressed hash table for exact match + brute-force linear scan for NN. Reads the CSV exported by the Python version. |
 | [`digits_memory.ipynb`](digits_memory.ipynb) | Lean notebook mirroring the Python script. Useful for quick interactive exploration. |
 | [`digits_study_guide.ipynb`](digits_study_guide.ipynb) | A 43-cell project notebook that builds the system from scratch with pandas DataFrames, plots, benchmarks, and a held-out accuracy stress test. Read this if you want to *learn* the project rather than just run it. |
+
+### Written content
+
+| File | What it is |
+|---|---|
 | [`BLOG.md`](BLOG.md) | The full write-up of the design and what I learned. |
 | [`LINKEDIN_PROJECT.md`](LINKEDIN_PROJECT.md) | Short polished project description for a LinkedIn profile. |
 | [`LINKEDIN_POST.md`](LINKEDIN_POST.md) | The share-post for LinkedIn. |
+
+### Designed assets (v2)
+
+| File | What it is |
+|---|---|
+| [`design/digit_memory_case_study.pdf`](design/digit_memory_case_study.pdf) | Eight-page designed case study: cover, hypothesis, architecture, numbers, dataset gallery, robustness, three implementations, colophon. Built with the design philosophy in `design/DESIGN_PHILOSOPHY.md` ("Computational Quiet"). |
+| [`design/digit_memory_poster.pdf`](design/digit_memory_poster.pdf) | Single-page tabloid poster with the headline numbers, two-tier diagram, and digit gallery. |
+| [`design/digit_memory_deck.pptx`](design/digit_memory_deck.pptx) | 8-slide widescreen deck for verbal presentation. Mirrors the case study sections. |
+| [`design/digit_memory_case_study.docx`](design/digit_memory_case_study.docx) | Word version of the case study for handoff to non-technical reviewers. |
+| [`design/architecture.png`](design/architecture.png) | Standalone architecture diagram (1600x1000). Embedded in the case study and slide deck. |
+| [`design/DESIGN_PHILOSOPHY.md`](design/DESIGN_PHILOSOPHY.md) | The visual philosophy behind the assets. |
+| [`design/generate.py`](design/generate.py) · [`design/generate_docs.py`](design/generate_docs.py) | Build scripts. `python3 design/generate.py && python3 design/generate_docs.py` rebuilds every asset. |
 
 ## Quick start
 
