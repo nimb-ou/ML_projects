@@ -1,17 +1,28 @@
-# How to benchmark the memorization techniques
+# How to benchmark the memorization techniques (with accuracy)
 
-This folder is a complete, runnable measurement suite. One command runs every technique discussed in the project on your machine and prints how much **time**, **memory**, and **compute** each one used.
+This folder is a complete, runnable measurement suite. **One command runs every technique discussed in the project on your machine and prints time, memory, compute, and accuracy** — and pits the retrieval-based methods against trained ML classifiers on the same held-out test set.
 
 You will see, side by side:
 
-- **Hash exact match** — O(1) dict lookup
-- **Brute force NN** — vectorized numpy scan
-- **KDTree** — sklearn's axis-aligned spatial index
-- **BallTree** — sklearn's hypersphere spatial index
-- **Hybrid (hash + BallTree)** — the production pattern: cheap lookup first, expensive fallback only on miss
-- **Pure C** — same hybrid pattern, hand-rolled, no dependencies
+**Retrieval methods**
 
-All measurements are taken on **your CPU**. No mocks. No simulations. The numbers you see are the numbers you would get if you deployed this code today.
+- Hash exact match (cache-only)
+- Brute force 1-NN
+- KDTree 1-NN
+- BallTree 1-NN
+- 3-NN and 5-NN (distance-weighted, BallTree)
+- Hybrid (hash + BallTree 1-NN)
+- C implementation (hash + brute-force fallback)
+
+**Trained classifiers (sklearn)**
+
+- Logistic Regression
+- Gaussian Naive Bayes
+- Random Forest (100 trees)
+- SVM (RBF kernel)
+- MLP (1 hidden layer of 100 units)
+
+All measurements are taken on **your CPU**. No mocks. No simulations. The accuracy numbers are computed on a proper stratified 75/25 train/test split, seed 42 by default.
 
 ---
 
@@ -21,122 +32,148 @@ All measurements are taken on **your CPU**. No mocks. No simulations. The number
 ./bench/run_all.sh
 ```
 
-That's it. Wait ~5 seconds. Read the table at the bottom.
+Wait ~10 seconds. Read the three tables at the end.
 
-If you want more queries (more stable percentiles, longer run):
+If you want a different train/test split:
 
 ```bash
-./bench/run_all.sh 5000        # 5k queries
-./bench/run_all.sh 50000       # 50k queries, ~1s total
+./bench/run_all.sh 7      # seed 7
+./bench/run_all.sh 123    # seed 123
 ```
 
 ---
 
 ## What you need
 
-- **macOS** (this guide is written for macOS, but everything works on Linux too)
+- **macOS** (or Linux — this works there too)
 - **Python 3.10+** with `numpy`, `scikit-learn`, `psutil`
 - **A C compiler** — `gcc` or `clang`. macOS ships with `clang` aliased as `gcc`; you have it already.
 
-Install Python deps if you haven't:
+Install the Python deps if you haven't:
 
 ```bash
 pip install -r requirements.txt
-pip install psutil      # one extra dep for the benchmark
 ```
 
-That's it. No Docker, no virtual envs needed.
+That's it. No Docker, no virtual env needed.
 
 ---
 
-## What the benchmark measures, in plain terms
+## What the benchmark measures
 
-For each technique, the suite captures four things:
+For each method (retrieval and classifier), the suite captures:
 
-### 1. Build time
+### 1. Fit / build time
 
-How long it takes to construct the index from the 1797 training samples.
+How long it takes to prepare the model for inference.
 
-- For the hash: how long to insert 1797 keys into a Python dict.
-- For the trees: how long sklearn's C-extension takes to partition space.
-
-Measured with `time.perf_counter()` (Python) and `clock_gettime(CLOCK_MONOTONIC)` (C). Sub-microsecond resolution on modern hardware.
+- **Retrieval methods**: time to build the index (dict insertion, tree construction).
+- **Classifiers**: full training time (gradient descent, tree growing, etc.).
 
 ### 2. Memory growth
 
-How much RAM the index actually occupies, measured as the **change in resident set size (RSS)** of the process before and after building.
+RSS delta from before to after building the model, via `psutil` (Python) and `getrusage()` (C). This is the most honest "how much RAM does the model take" number you can get.
 
-- Python: `psutil.Process().memory_info().rss` — bytes the OS has handed to your process.
-- C: `getrusage(RUSAGE_SELF)` → `ru_maxrss` — peak resident set size since program start.
+### 3. Per-prediction latency
 
-This is the most honest memory number you can get without instrumenting `malloc` itself. It includes every allocation made by Python, sklearn's C extensions, and any caches the OS hasn't yet reclaimed.
+The wall-clock cost of predicting a single label. The script reports the full distribution: min, median, mean, p95, p99, max. **p99 is the number that matters in production** — that's what your slowest customer experiences.
 
-### 3. Per-query latency
+### 4. Throughput
 
-For each of the N queries, we measure the wall-clock time **just for the lookup**. The script then computes a distribution:
+Total test predictions divided by total wall time. The qps you would report on a deployment dashboard.
 
-- **min** — fastest single query
-- **median (p50)** — the typical query
-- **mean** — average (sensitive to outliers)
-- **p95** — 95% of queries are faster than this
-- **p99** — 99% of queries are faster than this (the "tail")
-- **max** — slowest single query (often a noise event, GC pause, page fault)
+### 5. Accuracy
 
-The **p99** is the number that matters in production. The median tells you what most queries cost; p99 tells you what your worst customer is going to experience.
+The fraction of held-out test samples for which the predicted label matches the true label. The same metric every benchmark in the literature uses.
 
-### 4. Throughput (queries per second)
+### 6. Macro F1 / Weighted F1
 
-Total queries divided by total wall time. This is what you would report on a deployment dashboard.
+Per-class F1 score, averaged either treating all classes equally (macro) or weighted by class support (weighted). Both are reported because they answer different questions:
 
-### 5. CPU time
+- **Accuracy**: "out of every test sample, how often did we get it right?"
+- **Macro F1**: "averaged over the ten digit classes, how good are we?"
+- **Weighted F1**: like macro F1 but weighted by how common each class is in the test set.
 
-How much CPU your process actually used during the run.
-
-- **user CPU** — time spent executing your code in userspace.
-- **system CPU** — time spent in the kernel (file I/O, page faults, system calls).
-
-If wall time ≫ user CPU, your code is waiting on something (disk, network, contention). For these benchmarks wall ≈ user — everything is in memory and single-threaded.
+For this dataset the three are almost identical because classes are balanced (~45 samples per class in the test set). On an imbalanced dataset they would diverge sharply.
 
 ---
 
-## What's in the query mix?
+## What you get out
 
-500 queries that are **byte-identical** to stored samples (will hit the hash) and 500 queries that are **Gaussian-noisy** versions of stored samples with σ=2.0 pixel units (will fall through to nearest-neighbor). The two halves are shuffled before timing so the inner loop sees a realistic interleave, not a hot/cold pattern.
+Three tables, printed in order.
 
-You can change the mix with `--noise`:
+### Table 1: TIMING / MEMORY
 
-```bash
-python3 bench/bench.py --queries 5000 --noise 5.0
-./bench/bench       --queries 5000 --noise 5.0
+```
+ method                                    fit        p50        p99         qps        mem
+ hash (exact, cache-only)             466.4 us    0.25 us    0.37 us   2.99M qps   +0.75 MB
+ brute force 1-NN (numpy)              70.0 us    14.9 us    19.7 us   65.0k qps   +0.00 MB
+ KDTree 1-NN                           2.08 ms    40.9 us    73.5 us   24.3k qps   +0.16 MB
+ ...
+ Logistic Regression                  51.70 ms    17.2 us    36.2 us   55.1k qps   +2.67 MB
+ Random Forest (100)                 118.82 ms    1.08 ms    1.40 ms     910 qps   +6.16 MB
+ SVM (RBF)                            13.34 ms    64.9 us    98.9 us   15.1k qps   +0.34 MB
+ MLP (1x100)                         312.12 ms    26.7 us    67.8 us   35.9k qps   +5.72 MB
 ```
 
-At σ=0 every query is exact (100% hash hits). At σ=10 the noise dominates the signal and almost everything falls through to NN.
+### Table 2: ACCURACY
+
+```
+ method                               accuracy   macro F1     wtd F1        correct
+ hash (exact, cache-only)                0.00%      0.00%      0.00%      0 / 450
+ brute force 1-NN (numpy)               98.44%     98.42%     98.43%    443 / 450
+ ...
+ Logistic Regression                    96.22%     96.19%     96.23%    433 / 450
+ Random Forest (100)                    96.00%     95.96%     95.97%    432 / 450
+ SVM (RBF)                              99.11%     99.11%     99.11%    446 / 450
+ MLP (1x100)                            97.78%     97.76%     97.78%    440 / 450
+```
+
+### Table 3: HEAD-TO-HEAD
+
+```
+   best retrieval method  : brute force 1-NN
+     accuracy             : 98.44%
+     fit time             : 70 µs
+     p50 inference        : 14.9 µs
+
+   best trained classifier: SVM (RBF)
+     accuracy             : 99.11%
+     fit time             : 13.34 ms
+     p50 inference        : 64.9 µs
+
+   retrieval − classifier : −0.67 accuracy points, fit time 191× faster
+```
 
 ---
 
 ## How to read the output
 
-A typical run on an M-class Mac looks like this:
+**The hash row has 0% accuracy and that's the whole point.**
 
-```
- method                       build       rss        p50       p99    throughput
- hash (exact)               559.9 us   +1.00 MB    0.17 us   0.50 us   2.56M qps
- brute force (numpy)        151.1 us   +0.89 MB   20.1 us   28.4 us   49.3k qps
- KDTree                     667.0 us   +0.17 MB   28.7 us   68.0 us   29.8k qps
- BallTree                   731.1 us   +0.12 MB   40.7 us   56.8 us   24.8k qps
- hybrid (hash + BallTree)    1.22 ms   +0.81 MB   35.4 us   54.8 us   45.9k qps
- hash + brute fallback (C)   2.13 ms       --      1.00 us   2.00 us  836.8k qps
-```
+Hash exact match means "byte-identical lookup." Test samples are by construction **not** identical to anything in the train set — that's what makes them held-out. So the hash never hits in the accuracy test. The hash is the **cache** in front of the index, not the index itself. Its purpose is to short-circuit repeat queries in production at sub-microsecond cost. The hybrid row shows you what the system actually does: hash first, fall through to 1-NN on miss.
 
-What you should notice:
+**1-NN retrieval is competitive with trained classifiers.**
 
-1. **The hash is in a different league.** ~0.17 µs median is the cost of one dict lookup. Nothing else can compete on exact match. This is why a cache exists in every system you've ever shipped.
+You'll typically see something like:
 
-2. **Brute force beats both trees** at this scale. With only 1797 samples, the constant factors of tree traversal swamp the O(log n) savings. The trees win at larger N (try 100k samples and the picture flips).
+| Method | Accuracy | Fit time | Notes |
+|---|---:|---:|---|
+| Brute 1-NN | ~98.4% | <1 ms | No training |
+| LogisticRegression | ~96% | ~50 ms | Linear |
+| Random Forest | ~96-97% | ~120 ms | 100 trees |
+| MLP | ~97-98% | ~300 ms | Small NN |
+| SVM (RBF) | ~99% | ~15 ms | Highest accuracy |
 
-3. **The hybrid pays a build-time tax** (1.22 ms = hash + tree) but its **p50** is the average of fast hash hits and slower tree misses — exactly what you'd expect from a system where half the queries hit the cache.
+Retrieval ties or beats most trained baselines on this dataset, and the only thing that beats it (SVM) trains ~200× slower. That's the bargain retrieval offers: train in microseconds, get near-state-of-the-art accuracy.
 
-4. **Pure C is ~18x faster than the Python hybrid** with the same data, same query mix, same algorithm. That gap is the cost of running through the CPython interpreter. If you care about throughput, that gap is the answer to "should I rewrite this in C?".
+**Trees vs. brute force at this scale.**
+
+KDTree and BallTree are *slower* than brute force here because the dataset is small (1347 train) and high-dimensional (64). The tree-traversal overhead doesn't pay off until N is much larger. With 100k+ samples the trees pull ahead. Always benchmark.
+
+**The C version matches Python accuracy exactly.**
+
+Both use the same Euclidean 1-NN; both find the same nearest neighbor; both predict the same label. Accuracy is 98.44% in both. The C version is faster per prediction (~30 µs vs ~35 µs Python hybrid) because there's no interpreter overhead.
 
 ---
 
@@ -144,29 +181,31 @@ What you should notice:
 
 | File | What it is |
 |---|---|
-| `bench.py` | Python benchmark — runs all five techniques. |
-| `bench.c` | C benchmark — measures the hash + brute-fallback pattern. |
-| `compare.py` | Reads both JSON outputs and emits a comparison table. |
-| `run_all.sh` | Driver — compiles the C bench, runs both, prints the comparison. |
-| `results_python.json` | Machine-readable Python output (created by `bench.py`). |
-| `results_c.json` | Machine-readable C output (created by the C binary). |
+| `bench.py` | Python benchmark — 7 retrieval methods + 5 trained classifiers. |
+| `bench.c` | C benchmark — hash + brute-force fallback, reads the train/test CSVs. |
+| `compare.py` | Cross-language comparison. |
+| `run_all.sh` | One-command driver. |
+| `digits_train.csv` | Train split (1347 rows). Written by `bench.py`, used by `bench.c`. |
+| `digits_test.csv`  | Test  split ( 450 rows). Written by `bench.py`, used by `bench.c`. |
+| `results_python.json` | Machine-readable Python results. |
+| `results_c.json`      | Machine-readable C results. |
 | `HOWTO.md` | This file. |
 
 ---
 
 ## Running parts individually
 
-If you want to run just one piece:
-
 ```bash
 # Python only
-python3 bench/bench.py --queries 1000
+python3 bench/bench.py
+python3 bench/bench.py --seed 7 --test-size 0.20
 
-# C only (requires digits.csv from the main project)
+# C only (needs the CSVs from Python first)
+python3 bench/bench.py >/dev/null      # writes digits_train.csv + digits_test.csv
 gcc -O3 -Wall -Wextra -o bench/bench bench/bench.c -lm
-./bench/bench --queries 1000
+./bench/bench
 
-# Cross-language comparison (requires both JSON files to exist)
+# Comparison (after both have run)
 python3 bench/compare.py
 ```
 
@@ -174,57 +213,58 @@ python3 bench/compare.py
 
 ## Caveats and notes
 
-### Clock granularity
-
-`clock_gettime(CLOCK_MONOTONIC)` on macOS has roughly **microsecond resolution** for the kind of repeated short reads we do here. That means a single C measurement below ~1 µs will round to 0 or 1 µs. The **totals** are accurate; the per-query percentiles for very fast operations (like a single hash lookup) are bounded below by the timer itself.
-
-The Python side uses `time.perf_counter()`, which on macOS resolves to ~100 ns. You'll see sub-microsecond medians there.
-
-### Noise from other processes
-
-Run with as little else going on as possible. Chrome, Spotify, and Slack will jitter your tail latencies. A clean run is one where p99 is close to median × 2 or so. If p99 is 100× the median, something else on your machine grabbed the CPU.
-
-### Memory readings can be negative
-
-If you run the benchmark twice in the same process, GC may free memory between runs and the RSS delta can dip below zero. That's not a bug — it means Python reclaimed pages between the start and end of the measured block. The build is still small; the OS just gave the pages back.
-
-### What "compute" means here
-
-We report user + system CPU time. We don't measure FLOPs or cache misses — for that you'd want `perf` (Linux) or `dtrace`/`xctrace` (macOS). For decision-making at the application level, CPU time is the right currency.
+- **Clock granularity.** `clock_gettime(CLOCK_MONOTONIC)` on macOS resolves to ~1 µs for the tight loop we run. The C per-query medians for very fast operations round to whole microseconds. Totals (throughput) are exact.
+- **Quiet machine matters.** Close Chrome, Slack, Spotify. Background work jitters tail latencies. A clean run is one where p99 ≈ 2-3× the median; if p99 is 100× the median, something else grabbed the CPU.
+- **Memory readings can be negative.** Python GC may free memory between runs. A `-0.05 MB` is not a bug.
+- **Why the hash has 0% accuracy** — see the section above. It's the cache, not the classifier.
+- **Why brute force is sometimes faster than KDTree** — at N=1347 in 64-D, the tree-traversal constants swamp the O(log n) savings. The trees win convincingly at N > 50k.
 
 ---
 
 ## What to do next
 
-A few experiments worth trying:
+A few experiments worth running:
 
 ```bash
-# How does throughput scale with query count?
-for N in 100 1000 10000 100000; do
-  ./bench/run_all.sh $N 2>&1 | grep "hash (exact)"
+# How does accuracy change with the split seed?
+for S in 0 1 7 42 123; do
+  ./bench/run_all.sh $S 2>&1 | grep -E "brute force 1-NN|SVM \(RBF\)|Random Forest" | head -3
 done
 
-# How does noise level affect the hybrid hit rate and latency?
-for S in 0.0 0.5 1.0 3.0 5.0; do
-  python3 bench/bench.py --queries 5000 --noise $S 2>&1 | grep -E "hybrid|hash"
-done
-
-# What does the C version look like on a much larger query set?
-./bench/bench --queries 1000000        # 1M queries
-```
-
-If you want to plot the data, every run writes a JSON file. Open it with pandas:
-
-```python
+# Which classes does 1-NN struggle on?
+python3 - <<'PY'
 import json, pandas as pd
-py = json.load(open("bench/results_python.json"))
-df = pd.DataFrame([{
-    "method": r["name"],
-    "p50_us": r["per_query"]["median_us"],
-    "p99_us": r["per_query"]["p99_us"],
-    "qps":    r["throughput_qps"],
-} for r in py["results"]])
-print(df)
+from collections import defaultdict
+from sklearn.datasets import load_digits
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import BallTree
+d = load_digits()
+X_tr, X_te, y_tr, y_te = train_test_split(
+    d.data, d.target, test_size=0.25, random_state=42, stratify=d.target)
+tree = BallTree(X_tr)
+_, idx = tree.query(X_te, k=1)
+pred = y_tr[idx[:, 0]]
+cm = pd.crosstab(pd.Series(y_te, name="true"), pd.Series(pred, name="pred"))
+print(cm)
+PY
+
+# How fast can you push the C version?
+./bench/bench --train bench/digits_train.csv --test bench/digits_test.csv
+
+# Plot timing vs accuracy
+python3 - <<'PY'
+import json, matplotlib.pyplot as plt
+data = json.load(open("bench/results_python.json"))
+for r in data["results"]:
+    plt.scatter(r["per_query"]["median_us"], r["accuracy"]*100, s=80)
+    plt.annotate(r["name"], (r["per_query"]["median_us"], r["accuracy"]*100),
+                 fontsize=8, alpha=0.7)
+plt.xscale("log"); plt.xlabel("p50 inference (µs)")
+plt.ylabel("accuracy (%)"); plt.title("Accuracy vs. latency")
+plt.grid(alpha=0.3); plt.tight_layout()
+plt.savefig("bench/accuracy_vs_latency.png", dpi=140)
+print("saved bench/accuracy_vs_latency.png")
+PY
 ```
 
-That's everything you need. Run `./bench/run_all.sh`, read the table, draw your conclusions.
+That's everything. Run `./bench/run_all.sh`, read the three tables, draw your own conclusions about whether retrieval or a trained classifier is the right tool for your problem.

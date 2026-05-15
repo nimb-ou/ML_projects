@@ -1,37 +1,36 @@
 #!/usr/bin/env bash
 #
-# Run every benchmark in sequence and print a side-by-side comparison.
+# Run the full bench suite (Python + C) and print a comparison.
 #
-# Usage: ./bench/run_all.sh [N_QUERIES]
+# Usage:  ./bench/run_all.sh [SEED]
 #
 # Examples:
-#   ./bench/run_all.sh             # 1000 queries (default)
-#   ./bench/run_all.sh 5000        # 5000 queries
-#   ./bench/run_all.sh 50000       # heavier run, ~1s total
+#   ./bench/run_all.sh           # default seed (42)
+#   ./bench/run_all.sh 7         # different seed for the train/test split
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-N="${1:-1000}"
+SEED="${1:-42}"
 
-# --- prerequisites ---------------------------------------------------------
+# --- ensure the underlying dataset CSV exists -----------------------------
 if [ ! -f "digits.csv" ]; then
-  echo "[setup] digits.csv not found — running digits_memory.py to generate it."
+  echo "[setup] digits.csv not found — running digits_memory.py once."
   python3 digits_memory.py >/dev/null
 fi
 
-# --- compile C bench -------------------------------------------------------
+# --- compile the C bench ---------------------------------------------------
 echo "[build] compiling bench/bench.c ..."
 gcc -O3 -Wall -Wextra -o bench/bench bench/bench.c -lm
 
 echo
-# --- Python bench ----------------------------------------------------------
-python3 bench/bench.py --queries "$N"
+# --- Python bench (also writes the train/test CSVs the C bench needs) -----
+python3 bench/bench.py --seed "$SEED"
 echo
 
-# --- C bench ---------------------------------------------------------------
-./bench/bench --queries "$N"
+# --- C bench (uses bench/digits_train.csv and bench/digits_test.csv) ------
+./bench/bench
 echo
 
 # --- comparison ------------------------------------------------------------

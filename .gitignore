@@ -4,6 +4,8 @@ digits.csv
 digits_memory
 bench/bench
 bench/results_*.json
+bench/digits_train.csv
+bench/digits_test.csv
 *.o
 *.a
 *.so
