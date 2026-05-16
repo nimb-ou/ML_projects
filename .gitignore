@@ -3,6 +3,9 @@ digits.db
 digits.csv
 digits_memory
 digits_store.npz
+cifar-10-python.tar.gz
+cifar10_data/
+cifar10_store.npz
 bench/bench
 bench/results_*.json
 bench/digits_train.csv
