@@ -2,6 +2,7 @@
 digits.db
 digits.csv
 digits_memory
+digits_store.npz
 bench/bench
 bench/results_*.json
 bench/digits_train.csv
